@@ -1,0 +1,45 @@
+{
+  "name": "dsh-ocr",
+  "version": "0.1.0",
+  "description": "Registers one doc_ocr tool that turns scanned PDFs and images into structured text: plain page text, financial-table rows with a balance-sheet tie-out check, or contract-clause hits. Engine: RapidOCR (PaddleOCR PP-OCRv4 ONNX models), running locally.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "runner.js",
+    "core/",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zirscard/dsh-ocr.git"
+  },
+  "homepage": "https://github.com/zirscard/dsh-ocr#readme",
+  "bugs": {
+    "url": "https://github.com/zirscard/dsh-ocr/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "ocr",
+    "pdf",
+    "rapidocr",
+    "paddleocr",
+    "financial-statements"
+  ]
+}

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Local OCR reports
+.ocr/
+
+# macOS
+.DS_Store
+
+# Sign-fix backups contain a copy of the host Python binary — never commit them.
+sign/backup/
+
+# Local test fixtures and outputs
+test/fixtures/local/
+test/test-output/

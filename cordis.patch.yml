@@ -1,0 +1,6 @@
+# dsh-ocr bundle patch: one host-only row (agent tool + system-prompt section).
+# No client half, no routes, no ledger — everything runs in the host process and
+# shells out to an OCR-capable Python (RapidOCR / PaddleOCR PP-OCRv4 ONNX models).
+- insert:
+    - id: dsh-ocr
+      name: dsh-ocr
