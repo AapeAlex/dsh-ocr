@@ -14,7 +14,8 @@
     "core/",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "requirements.txt"
   ],
   "dsh": {
     "bundle": {

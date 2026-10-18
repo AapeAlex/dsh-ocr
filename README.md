@@ -30,6 +30,12 @@
 
 ## 三、运行环境
 
+先给一个可用的 Python 安装依赖（RapidOCR 会带上 onnxruntime / opencv / numpy）：
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
 RapidOCR 依赖 `onnxruntime / opencv / pypdfium2` 等 **C 扩展 wheel**。在 macOS 上，如果 DSH 内置 Python 启用了 hardened runtime + Library Validation，可能拒绝加载这些 ad-hoc 签名的动态库：
 
 ```text
