@@ -8,7 +8,7 @@
  * interpreter — an explicit `DSH_OCR_PYTHON` override, then Anaconda, then the DSH
  * python as a last resort — and, for non-DSH interpreters, appends the DSH
  * site-packages (where rapidocr_onnxruntime is installed) via the bundled
- * `core/_boot/sitecustomize.py`.
+ * `core/_boot/sitecustomize.py`, mirroring the proven `toolchain/v3py` mechanism.
  *
  * No external npm dependencies. A missing OCR interpreter is a structured error
  * with a remediation hint, not a crash.
@@ -209,9 +209,11 @@ export async function runOcr(options) {
     '--pages', normalizePages(options.pages),
     '--dpi', String(options.dpi ?? (mode === 'table' ? 300 : 200)),
     '--lang', options.lang ?? 'ch',
+    '--engine', options.engine ?? 'local',
     '--out-json', jsonPath,
     '--out-md', mdPath,
   ]
+  if (options.glmPrompt) args.push('--glm-prompt', String(options.glmPrompt))
 
   const candidates = findOcrPythonCandidates()
   const tried = []
@@ -271,5 +273,93 @@ export async function runOcr(options) {
     error: `no OCR-capable interpreter succeeded (tried: ${tried.map((t) => t.source).join(', ') || 'none'})${lastError ? `: ${lastError}` : ''}`,
     tried,
     hint: 'Run the macOS sign fix (dsh-macos-signfix, doc_ocr_sign_fix mode=auto) to make the DSH built-in Python load onnxruntime/cv2/pypdfium2, or set DSH_OCR_PYTHON to an Anaconda/conda python3 with rapidocr-onnxruntime installed.',
+  }
+}
+
+/**
+ * Run the 7-stage knowledge-base preprocessing pipeline over a file or directory.
+ *
+ * Stages: discover → classify → extract → clean → structure → output → verify,
+ * with sha256-based incremental skip. Outputs Obsidian-flavored markdown
+ * (YAML frontmatter) + JSON + a cache.json under outputDir.
+ *
+ * @param {object} options
+ * @param {string} options.input - file or directory to preprocess
+ * @param {string} [options.outputDir] - output directory (default <input>/.preprocessed)
+ * @param {'all'|'classify'|'discover'} [options.mode]
+ * @param {number} [options.dpi] - OCR render DPI (default 200)
+ * @param {number} [options.maxFiles] - cap files processed (default 200)
+ * @param {boolean} [options.force] - ignore cache, reprocess all
+ * @param {string} options.engineRoot - plugin root (contains core/pipeline.py)
+ */
+export async function runPreprocess(options) {
+  const input = resolve(options.input)
+  if (!existsSync(input)) return { ok: false, error: `input not found: ${input}` }
+
+  const engine = join(options.engineRoot, 'core', 'pipeline.py')
+  if (!existsSync(engine)) return { ok: false, error: `pipeline engine missing: ${engine}` }
+
+  const mode = options.mode ?? 'all'
+  const outputDir = options.outputDir ?? join(dirname(input), '.preprocessed')
+
+  const args = [
+    engine,
+    '--input', input,
+    '--output', outputDir,
+    '--mode', mode,
+    '--dpi', String(options.dpi ?? 200),
+    '--max-files', String(options.maxFiles ?? 200),
+    '--engine', options.ocrEngine ?? 'local',
+  ]
+  if (options.force) args.push('--force')
+
+  const candidates = findOcrPythonCandidates()
+  const bootDir = join(options.engineRoot, 'core', '_boot')
+  const extraSite = dshSitePackages()
+  const tried = []
+  let lastError = null
+
+  for (const cand of candidates) {
+    const env = {}
+    if (!cand.isDsh) {
+      if (extraSite) env.V3_EXTRA_SITE = extraSite
+      env.PYTHONPATH = [bootDir, process.env.PYTHONPATH].filter(Boolean).join(process.platform === 'win32' ? ';' : ':')
+    }
+    const result = await (async () => {
+      await acquireSlot()
+      try {
+        return await exec(cand.python, args, { cwd: dirname(engine), env, timeoutMs: 1_800_000 })
+      } finally {
+        releaseSlot()
+      }
+    })()
+    if (result.code !== 0) {
+      const detail = (result.stderr || result.stdout || '').trim().split('\n').slice(-8).join('\n')
+      tried.push({ source: cand.source, error: `exit ${result.code}: ${detail.slice(0, 300)}` })
+      lastError = detail
+      continue
+    }
+    let payload
+    try {
+      payload = JSON.parse(result.stdout)
+    } catch {
+      tried.push({ source: cand.source, error: 'invalid JSON from pipeline' })
+      lastError = 'invalid JSON from pipeline'
+      continue
+    }
+    if (payload && typeof payload === 'object' && payload.ok) {
+      payload.interpreter = cand.source
+      if (tried.length > 0) payload.fallback_used = tried
+      return payload
+    }
+    tried.push({ source: cand.source, error: payload?.error ?? 'pipeline returned ok=false' })
+    lastError = payload?.error ?? 'pipeline returned ok=false'
+  }
+
+  return {
+    ok: false,
+    error: `pipeline failed on all interpreters (tried: ${tried.map((t) => t.source).join(', ') || 'none'})${lastError ? `: ${lastError}` : ''}`,
+    tried,
+    hint: 'Check that the OCR interpreter can import pypdf/pdfplumber/openpyxl/python-docx/python-pptx/rapidocr. Run doc_ocr_sign_fix(mode="auto") if native extensions fail to load.',
   }
 }

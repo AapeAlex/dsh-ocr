@@ -391,6 +391,9 @@ def main():
     ap.add_argument("--out-json")
     ap.add_argument("--out-md")
     ap.add_argument("--probe", action="store_true", help="只检测原生扩展能否加载（不跑 OCR）")
+    ap.add_argument("--engine", default="local", choices=["local", "glm"],
+                    help="local=本机 RapidOCR（默认）；glm=智谱 GLM-OCR 云端（需 ZHIPU_API_KEY）")
+    ap.add_argument("--glm-prompt", default="", help="engine=glm 时附加的解析提示词（可空）")
     args = ap.parse_args()
 
     # probe：给 runner/插件判断「这个解释器能不能跑 OCR」，不依赖输入文件
@@ -409,6 +412,11 @@ def main():
 
     if not os.path.exists(args.input):
         emit_error("input not found: %s" % args.input)
+        return
+
+    # 云端引擎：智谱 GLM-OCR（engine=glm），PDF 原生整档 / 图片 base64，输出原生 Markdown
+    if getattr(args, "engine", "local") == "glm":
+        _run_glm(args)
         return
 
     try:
@@ -465,6 +473,81 @@ def main():
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "pages": per_page,
         "clauses": clauses,
+    }
+    if args.out_json:
+        write_json(args.out_json, out)
+    if args.out_md:
+        write_md(args.out_md, out)
+    print(json.dumps(out, ensure_ascii=False))
+
+
+def _run_glm(args):
+    """engine=glm：智谱 GLM-OCR 云端跑 text / table / clause 三模式。
+
+    输出结构与本地引擎一致（pages/clauses/table.balance_checks），
+    table 模式解析 GLM-OCR 返回的 Markdown 表格后仍跑「资产=负债+权益」勾稽。
+    """
+    import zhipu_ocr
+    t0 = time.time()
+    ext = os.path.splitext(args.input)[1].lower()
+    try:
+        text, usage = zhipu_ocr.glm_ocr_file(args.input, prompt=args.glm_prompt or None)
+    except zhipu_ocr.ZhipuOcrError as e:
+        print(json.dumps({"ok": False, "error": "glm_unavailable",
+                          "detail": str(e)}, ensure_ascii=False))
+        return
+
+    total_pages = 1
+    if ext not in IMG_EXTS:
+        try:
+            import pypdfium2 as pdfium
+            total_pages = len(pdfium.PdfDocument(args.input))
+        except Exception:
+            total_pages = 1
+
+    page_rec = {
+        "page": 1,
+        "chars": len(text),
+        "lines": len(text.split("\n")),
+        "avg_conf": None,
+        "text": text,
+        "note": "GLM-OCR 文档级解析（原生 Markdown，含表格/公式）",
+    }
+    clauses = []
+    if args.mode == "clause":
+        clauses = clause_hits([(1, [{"text": ln} for ln in text.split("\n")])])
+    if args.mode == "table":
+        md_rows = zhipu_ocr.parse_md_tables(text)
+        rows = []
+        for r in md_rows:
+            if not r:
+                continue
+            label = str(r[0])
+            cells = []
+            for c in r[1:]:
+                cells.append(c if isinstance(c, float) else None)
+            rows.append({"label": label, "cells": cells, "conf": None})
+        page_rec["table"] = {
+            "ok": len(rows) > 1,
+            "columns": max((len(r["cells"]) for r in rows), default=0),
+            "rows": rows,
+            "balance_checks": balance_check(rows),
+            "note": "GLM-OCR 原生 Markdown 表格解析；勾稽沿用本地口径",
+        }
+
+    out = {
+        "ok": True,
+        "engine": "GLM-OCR (Zhipu, 0.9B, OmniDocBench SOTA)",
+        "input": args.input,
+        "mode": args.mode,
+        "dpi": args.dpi,
+        "pages_requested": [1],
+        "page_count": total_pages,
+        "elapsed_s": round(time.time() - t0, 1),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "pages": [page_rec],
+        "clauses": clauses,
+        "usage": usage,
     }
     if args.out_json:
         write_json(args.out_json, out)

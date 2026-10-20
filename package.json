@@ -1,7 +1,7 @@
 {
   "name": "dsh-ocr",
-  "version": "0.1.0",
-  "description": "Registers one doc_ocr tool that turns scanned PDFs and images into structured text: plain page text, financial-table rows with a balance-sheet tie-out check, or contract-clause hits. Engine: RapidOCR (PaddleOCR PP-OCRv4 ONNX models), running locally.",
+  "version": "0.3.0",
+  "description": "Registers two tools for DeepSeek Harness. doc_ocr turns scanned PDFs and images into structured text (per-page text, financial tables with a balance-sheet tie-out check, contract-clause hits) via a local RapidOCR engine or a Zhipu GLM-OCR cloud engine. doc_preprocess turns a directory of raw files into an Obsidian-ready knowledge base through a seven-stage pipeline with backend routing and sha256-based incremental skipping.",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -41,6 +41,8 @@
     "pdf",
     "rapidocr",
     "paddleocr",
-    "financial-statements"
+    "glm-ocr",
+    "knowledge-base",
+    "obsidian"
   ]
 }
