@@ -129,9 +129,17 @@ function exec(command, args, options = {}) {
   return new Promise((resolvePromise) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: { ...process.env, ...(options.env ?? {}) },
+      // PYTHONUTF8/PYTHONIOENCODING force the engine's stdout to UTF-8: on Windows
+      // a piped stdout defaults to the locale code page (cp936 here), which turned
+      // the Chinese text in the JSON payload into mojibake while the --out-json /
+      // --out-md files written by the engine itself stayed correct.
+      env: { ...process.env, ...(options.env ?? {}), PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    // Decode as UTF-8 explicitly and let the stream own chunk boundaries, so a
+    // multi-byte character split across two chunks is not turned into U+FFFD.
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     let stdout = ''
     let stderr = ''
     let settled = false

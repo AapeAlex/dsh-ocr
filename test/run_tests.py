@@ -18,7 +18,9 @@ Coverage:
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(HERE)
@@ -40,6 +42,15 @@ def check(name, cond, detail=""):
 
 
 def main():
+    # The ✅/❌ markers below are unencodable on a cp936 console; keep the suite
+    # runnable on Windows without requiring `python -X utf8`.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except Exception:
+                pass
+
     print("# A. Number cleaning")
     check("thousands comma 52,163", ocr.clean_number("52,163") == 52163.0, str(ocr.clean_number("52,163")))
     check("dot as thousands separator 52.163", ocr.clean_number("52.163") == 52163.0, str(ocr.clean_number("52.163")))
@@ -115,6 +126,27 @@ def main():
                     "OK" if c["balanced"] else "diff=" + str(c["diff"])))
         else:
             print("  (skipped: set DSH_OCR_TEST_PDF to a scanned financial report)")
+
+    print("\n# E. stdout encoding contract (regression: mojibake on Windows)")
+    # A redirected stdout is the case that used to break the host: the engine
+    # printed UTF-8 text that Python encoded as cp936. Check the raw bytes, via a
+    # file (pipes are not available in every sandbox).
+    code = ("import sys; sys.path.insert(0, %r); import ocr; "
+            "ocr.force_utf8_stdout(); print('货币资金 OK')" % CORE)
+    out = os.path.join(tempfile.gettempdir(), "dsh-ocr-stdout-%d.bin" % os.getpid())
+    try:
+        with open(out, "wb") as f:
+            subprocess.run([sys.executable, "-c", code], stdout=f, stderr=subprocess.DEVNULL)
+        with open(out, "rb") as f:
+            raw = f.read()
+    finally:
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+    check("engine stdout is valid UTF-8", "货币资金".encode("utf-8") in raw,
+          raw[:60].decode("utf-8", "replace"))
+    check("no replacement chars in stdout", b"\xef\xbf\xbd" not in raw)
 
     print("\n# Result: %d passed / %d failed" % (len(PASS), len(FAIL)))
     if FAIL:

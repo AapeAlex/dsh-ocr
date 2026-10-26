@@ -382,6 +382,7 @@ def table_extract(engine, img):
 # 主流程
 # ---------------------------------------------------------------------------
 def main():
+    force_utf8_stdout()
     ap = argparse.ArgumentParser(description="dsh-ocr 引擎")
     ap.add_argument("--input", required=True)
     ap.add_argument("--pages", default="all")
@@ -554,6 +555,26 @@ def _run_glm(args):
     if args.out_md:
         write_md(args.out_md, out)
     print(json.dumps(out, ensure_ascii=False))
+
+
+def force_utf8_stdout():
+    """Guarantee UTF-8 on stdout/stderr regardless of the console code page.
+
+    On Windows a piped or redirected stdout defaults to the locale encoding
+    (cp936 / gbk on a zh-CN machine). The JSON printed below then reached the host
+    as non-UTF-8 bytes, so every Chinese string came back as mojibake while the
+    files written with an explicit encoding="utf-8" stayed correct - which made the
+    bug look like a report-writer problem rather than an encoding problem.
+
+    runner.js already passes PYTHONUTF8=1 / PYTHONIOENCODING=utf-8; this is the
+    in-process fallback so a direct CLI invocation behaves the same way.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except Exception:
+                pass
 
 
 def emit_error(msg):
